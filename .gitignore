@@ -5,3 +5,5 @@
 .httr-oauth
 .Rdata
 .DS_Store
+spot.pickle
+spot_lfm_final.json
