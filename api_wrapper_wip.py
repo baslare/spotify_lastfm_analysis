@@ -39,11 +39,22 @@ class lfm_api:
         
         request_url = f"{self.root_url}/{method_url}"
         
-        
-        
-        
-        
         return(requests.get(request_url, params))
+        
+    def get_artist_tags(self,artist):
+        
+        method_url = "?method=artist.gettoptags"
+        
+        params = {"artist":artist,
+                  "autocorrect":1,
+                  "format":"json",
+                  "api_key":self.api_key}
+                  
+        
+        
+        request_url = f"{self.root_url}/{method_url}"
+        return(requests.get(request_url, params))
+        
     
     @staticmethod
     def get_tracks_df(response_):

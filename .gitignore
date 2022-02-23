@@ -7,3 +7,7 @@
 .DS_Store
 spot.pickle
 spot_lfm_final.json
+__pycache__
+last_fm_raw.json
+spot_artists.pickle
+spot_features.pickle

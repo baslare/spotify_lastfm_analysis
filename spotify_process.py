@@ -6,6 +6,8 @@ Created on Tue Feb 22 12:44:00 2022
 """
 
 import os
+###change the working directory / if needed
+os.chdir("C:/Users/Efe/Desktop/Projeler/spotify_lastfm_analysis")
 from api_wrapper_wip import lfm_api
 from spofity_py import spotify
 import time
@@ -15,14 +17,6 @@ import requests
 import pickle
 import urllib.parse
 import numpy as np
-
-
-
-###change the working directory / if needed
-os.chdir("C:/Users/Efe/Desktop/Projeler/spotify_lastfm_analysis")
-
-
-
 
 
 ###bring in the last.fm dataset
@@ -36,6 +30,9 @@ sp = spotify(API_KEY="your_api_key",API_SECRET="your_api_secret")
 sp.auth()
 
 
+##initiate an instantce of the lfm_api class
+
+lfm_ = lfm_api(api_key="your_api_key")
 
 
 ### search spotify, use last-fm scrobbles to create a personal list of songs played
@@ -166,7 +163,9 @@ for x,y in zip(interval_1,interval_2):
 #save the data
 with open("spot_artists.pickle", "wb") as f:
             pickle.dump(artist_list, f, protocol=pickle.HIGHEST_PROTOCOL)
-            
+ 
+#with open("spot_artists.pickle", "rb") as f:
+#            artist_list = pickle.load(f)
             
 
 artist_list = [x.json() for x in artist_list]
@@ -208,9 +207,25 @@ artist_df = artist_df.drop_duplicates(subset="artist_id")
 
 master_df = master_df.merge(artist_df,how="left",on="artist_id")
 
+
+#ascertaining the names of the columns that are going to be in the final data frame
 ft_col = features_df.columns.to_list()
 ft_col.remove("track_id")
-master_df = master_df[["track_id","track_name","album_id","album_name","album_rd","artist_id","artist_name","name","artist.name","track_query","track_popularity","artists_id","artists_name"]+ft_col]
+
+at_col = artist_df.columns.to_list()
+at_col.remove("artist_id")
+
+artist_unique = list(master_df["artist.name"].drop_duplicates())
+#get artist top tags
+artist_tags = [lfm_.get_artist_tags(x) for x in artist_unique]
+artist_tags_list = [x.json() for x in artist_tags]
+artist_tags_list = [x.get("toptags").get("tag") for x in artist_tags_list]
+artist_tags_list = [x[0].get("name") if len(x) > 0 else [] for x in artist_tags_list]
+
+artist_tags_df = pd.DataFrame({"artist.name":artist_unique,
+                               "artist_tag":artist_tags_list})
+
+master_df = master_df[["track_id","track_name","album_id","album_name","album_rd","artist_id","artist_name","name","artist.name","track_query","track_popularity","artists_id","artists_name"]+ft_col+at_col]
 master_df = master_df.loc[:,~master_df.columns.duplicated()]
 
 #populate the playlist record with spotify characteristics
@@ -218,6 +233,9 @@ master_df = master_df.loc[:,~master_df.columns.duplicated()]
 lfm_df = lfm_df.merge(master_df,how="left",on=["name","artist.name"])
 lfm_df.reset_index(inplace=True, drop=True)
 lfm_df = lfm_df[[not pd.isna(x) for x in lfm_df.track_id]]
+
+lfm_df = lfm_df.merge(artist_tags_df,how="left",on="artist.name")
+
 
 
 
