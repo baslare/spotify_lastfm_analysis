@@ -237,8 +237,6 @@ lfm_df = lfm_df[[not pd.isna(x) for x in lfm_df.track_id]]
 lfm_df = lfm_df.merge(artist_tags_df,how="left",on="artist.name")
 
 
-
-
 with open("spot_lfm_final.json", "w",encoding="utf-8") as file:
             lfm_df.to_json(file, force_ascii=False)
 

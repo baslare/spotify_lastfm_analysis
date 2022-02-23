@@ -11,3 +11,4 @@ __pycache__
 last_fm_raw.json
 spot_artists.pickle
 spot_features.pickle
+spotify_lastfm_analysis.Rproj
