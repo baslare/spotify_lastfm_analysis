@@ -136,3 +136,88 @@ ggplot(songs_unique,aes(x=PC1,y=PC3,size=count)) +
   scale_size_continuous(range = c(0,3)) + 
   theme(legend.position = "none")
 
+
+##genres - prog metal - kinship
+
+
+prog_unique <- lfm_df %>% select(name,artist.name,duration_ms,artist_tag,danceability:tempo)
+prog_unique$artist_tag <- as.character(prog_unique$artist_tag)
+prog_unique <- prog_unique %>% distinct(name,artist.name,artist_tag,.keep_all = T)
+
+duration_played <- lfm_df %>% 
+  select(name,artist.name,artist_tag,duration_ms) %>% 
+  group_by(name,artist.name,artist_tag) %>% 
+  summarise_all(sum)
+
+duration_played$artist_tag <- as.character(duration_played$artist_tag)
+
+prog_unique <- prog_unique %>% 
+  group_by(name,artist.name,artist_tag) %>% 
+  dplyr::mutate(count=n()) %>% 
+  summarise_all(mean) %>% rename(duration_unique=duration_ms)
+
+prog_unique <- left_join(prog_unique,duration_played, by=c("artist_tag","name","artist.name"))
+
+
+prog_unique <- prog_unique %>% select(-c(acousticness,key,mode,speechiness,instrumentalness,liveness))
+
+
+total_played <- prog_unique %>% 
+  select(artist_tag,duration_ms) %>% 
+  group_by(artist_tag) %>% summarise_if(is.numeric,sum,na.rm=T)
+
+prog_unique <- prog_unique %>% 
+  group_by(artist_tag) %>% 
+  summarise(danceability = sum((danceability*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
+            energy = sum((energy*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
+            loudness = sum((loudness*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
+            valence = sum((valence*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
+            tempo = sum((tempo*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
+            duration_played = sum(duration_ms,na.rm=T),
+            duration_average = mean(duration_unique,na.rm=T))
+
+
+
+
+
+prog_unique[,2:6] <- apply(prog_unique[,2:6], MARGIN = 2, scale)
+
+prog_unique$duration_played <- prog_unique$duration_played/3600000
+prog_unique <- prog_unique %>% filter(duration_played > 0.5)
+
+prog.pca <- prcomp(prog_unique[,2:6])
+summary(prog.pca)
+prog.pca$rotation
+
+prog_unique$PC1 <- prog.pca$x[,1]
+prog_unique$PC2 <- prog.pca$x[,2]
+prog_unique$PC3 <- prog.pca$x[,3]
+prog_unique$PC4 <- prog.pca$x[,4]
+
+
+
+  
+rot <- sweep(prog.pca$rotation,2,prog.pca$sdev,FUN="*")
+rot <- as.data.frame(rot[,c("PC1","PC2")])
+colnames(rot) <- c("xvar","yvar")
+rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
+                      hjust = (1 -1.5*sign(xvar))/2)
+
+
+prog_unique <- prog_unique %>% arrange(desc(duration_played))
+
+ggplot(prog_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(alpha=0.5,aes(size=duration_played)) + geom_text(aes(label=artist_tag),size=2,alpha=0.3) +
+scale_size_continuous(range = c(0,30)) + 
+  theme(legend.position = "none") +
+  geom_segment(data=rot,aes(x = 0,y=0,xend=2*xvar,yend=2*yvar),color=muted("red"),
+               arrow = arrow(length = unit(1/2, 'picas'))) +
+  geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="darkred")
+
+ 
+
+plotly::ggplotly()
+
+
+
+
