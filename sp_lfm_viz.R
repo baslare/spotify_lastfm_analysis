@@ -106,43 +106,154 @@ ggraph(df_graph,layout = "circlepack",weight=size) +
 
 ggsave("efe_last_fm.jpeg",height = 18,width = 18,dpi=500)
 
-####pca
 
-songs_unique <- lfm_df %>% select(artist.name,duration_ms,artist_tag,danceability:tempo)
-songs_unique <- songs_unique %>% group_by(artist.name,artist_tag) %>% dplyr::mutate(count=n()) %>% summarise_all(mean)
-songs_unique <- songs_unique %>% select(-c(acousticness,key,mode,speechiness))
-songs_unique$artist.name <- as.character(songs_unique$artist.name)
+#### songs
+
+song_list <- lfm_df %>% 
+  select(name,artist.name,artist_tag,duration_ms) %>% 
+  mutate(artist_tag  = as.character(artist_tag),
+         artist.name = as.character(artist.name),
+         name = as.character(name))
+
+song_count <- song_list  %>% 
+  group_by(name,artist.name,artist_tag) %>% 
+  summarise(count=n(),
+            time_played=sum(duration_ms)/3600000)
+
+
+prog_count <- song_count %>% filter(str_match(artist_tag,"Progressive metal|Avant-garde Metal|Progressive rock|Power metal"))
+
+prog_artists_count <- prog_count %>% group_by(artist.name) %>% summarise_if(is.numeric,sum)
+
+#### songs pca - top 25 artists ####
+
+all_artists_count <- song_count %>% group_by(artist.name) %>% summarise_if(is.numeric,sum)
+top_artists <- all_artists_count %>% arrange(desc(time_played)) %>% head(30)
+
+songs_unique <- lfm_df %>% select(name,artist.name,artist_tag,duration_ms,danceability:tempo)
 songs_unique$artist_tag <- as.character(songs_unique$artist_tag)
+songs_unique$artist.name <- as.character(songs_unique$artist.name)
+songs_unique$name <- as.character(songs_unique$name)
 
-songs_unique[,4:10] <- apply(songs_unique[,4:10], MARGIN = 2, scale)
+songs_unique <- songs_unique %>% filter(artist.name %in% top_artists$artist.name)
+songs_unique <- songs_unique %>% distinct(name,artist.name,artist_tag,.keep_all = T)
+top_artist_songs <- song_count %>% filter(artist.name %in% top_artists$artist.name)
+
+songs_unique <- left_join(songs_unique,top_artist_songs,by=c("name","artist.name","artist_tag"))
+songs_unique <- songs_unique %>% select(-c(key,mode,speechiness,instrumentalness,liveness,acousticness))
+
+songs_unique[,5:9] <- apply(songs_unique[,5:9], MARGIN = 2, scale)
+#prog_unique <- prog_unique %>% filter(time_played > 0.5)
+
+song.pca <- prcomp(songs_unique[,5:9])
+song.res <- summary(song.pca)
+song.pca$rotation
+
+song.var.explained <- song.pca$sdev^2/sum(song.res$sdev %>% sapply(function(x) x*x))
+
+songs_unique$PC1 <- song.pca$x[,1]
+songs_unique$PC2 <- song.pca$x[,2]
+songs_unique$PC3 <- song.pca$x[,3]
+songs_unique$PC4 <- song.pca$x[,4]
 
 
 
-songs.pca <- prcomp(songs_unique[,4:10])
-summary(songs.pca)
-songs.pca$rotation
+
+rot <- sweep(song.pca$rotation,2,song.pca$sdev,FUN="*")
+rot <- as.data.frame(rot[,c("PC1","PC2")])
+
+colnames(rot) <- c("xvar","yvar")
+rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
+                      hjust = (1 -1.5*sign(xvar))/2)
 
 
+songs_unique <- songs_unique %>% arrange(desc(time_played))
+songs_unique <- songs_unique %>% mutate()
 
-songs_unique$PC1 <- songs.pca$x[,1]
-songs_unique$PC2 <- songs.pca$x[,2]
-songs_unique$PC3 <- songs.pca$x[,3]
-songs_unique$PC4 <- songs.pca$x[,4]
+ggplot(songs_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(aes(size=time_played,group=name,fill=artist_tag),alpha=0.2,color="#d43a06",shape=21) + 
+  #geom_convexhull(aes(fill=artist_tag),alpha=0.1) +
+  #geom_text(aes(label=artist.name),size=2,alpha=0.5,family="Noto Sans") +
+  scale_size_continuous(range = c(0,6)) + 
+  theme(legend.position = "none",
+        panel.background = element_rect(fill="#fcede8"),
+        text=element_text(family="Noto Sans"),
+        panel.grid.minor = element_blank()) +
+  geom_segment(data=rot,aes(x = 0,y=0,xend=2*xvar,yend=2*yvar),color="#822d11",
+               arrow = arrow(length = unit(1/2, 'picas'))) +
+  geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="#822d11",family="Noto Sans") + labs(x=paste0("PC1: ",round(song.var.explained[1]*100,digits = 2),"% of variance"),
+                                                                                                                                   y=paste0("PC2: ",round(song.var.explained[2]*100,digits = 2),"% of variance"))
+plotly::ggplotly()
 
 
-
-ggplot(songs_unique,aes(x=PC1,y=PC3,size=count)) + 
-  geom_point(alpha=0.5,aes(color=as.factor(artist_tag))) + 
-  scale_size_continuous(range = c(0,3)) + 
-  theme(legend.position = "none")
-
-
-##genres - prog metal - kinship
-
+#### prog artists - pca
 
 prog_unique <- lfm_df %>% select(name,artist.name,duration_ms,artist_tag,danceability:tempo)
 prog_unique$artist_tag <- as.character(prog_unique$artist_tag)
+prog_unique$artist.name <- as.character(prog_unique$artist.name)
+prog_unique$name <- as.character(prog_unique$name)
+prog_unique <- prog_unique %>% filter(artist_tag == "Progressive metal")
 prog_unique <- prog_unique %>% distinct(name,artist.name,artist_tag,.keep_all = T)
+
+
+prog_unique <- prog_unique %>% 
+  group_by(artist.name) %>% 
+  summarise_if(is.numeric,mean) %>% rename(duration_unique=duration_ms)
+
+
+
+
+prog_unique <- prog_unique %>% select(-c(key,mode,speechiness,instrumentalness,liveness))
+prog_unique <- left_join(prog_unique,prog_artists_count, by=c("artist.name"))
+
+
+prog_unique[,3:7] <- apply(prog_unique[,3:7], MARGIN = 2, scale)
+#prog_unique <- prog_unique %>% filter(time_played > 0.5)
+
+prog.pca <- prcomp(prog_unique[,3:7])
+prog.res <- summary(prog.pca)
+prog.pca$rotation
+
+prog.var.explained <- prog.pca$sdev^2/sum(prog.res$sdev %>% sapply(function(x) x*x))
+
+prog_unique$PC1 <- prog.pca$x[,1]
+prog_unique$PC2 <- prog.pca$x[,2]
+prog_unique$PC3 <- prog.pca$x[,3]
+prog_unique$PC4 <- prog.pca$x[,4]
+
+
+
+
+rot <- sweep(prog.pca$rotation,2,prog.pca$sdev,FUN="*")
+rot <- as.data.frame(rot[,c("PC1","PC2")])
+
+colnames(rot) <- c("xvar","yvar")
+rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
+                      hjust = (1 -1.5*sign(xvar))/2)
+
+
+prog_unique <- prog_unique %>% arrange(desc(time_played))
+
+ggplot(prog_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(alpha=0.5,aes(size=time_played),color="#d43a06",fill="#f0ba65",shape=21) + 
+  geom_text(aes(label=artist.name),size=2,alpha=0.5,family="Noto Sans") +
+  scale_size_continuous(range = c(2,20)) + 
+  theme(legend.position = "none",
+        panel.background = element_rect(fill="#fcede8"),
+        text=element_text(family="Noto Sans"),
+        panel.grid.minor = element_blank()) +
+  geom_segment(data=rot,aes(x = 0,y=0,xend=2*xvar,yend=2*yvar),color="#822d11",
+               arrow = arrow(length = unit(1/2, 'picas'))) +
+  geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="#822d11",family="Noto Sans") + labs(x=paste0("PC1: ",round(prog.var.explained[1]*100,digits = 2),"% of variance"),
+                                                                                                                                   y=paste0("PC2: ",round(prog.var.explained[2]*100,digits = 2),"% of variance"))
+ggsave(filename = "dnm.jpeg",width = 10,height = 10,dpi = 300)
+
+##genres - pca
+
+
+genre_unique <- lfm_df %>% select(name,artist.name,duration_ms,artist_tag,danceability:tempo)
+genre_unique$artist_tag <- as.character(genre_unique$artist_tag)
+genre_unique <- genre_unique %>% distinct(name,artist.name,artist_tag,.keep_all = T)
 
 duration_played <- lfm_df %>% 
   select(name,artist.name,artist_tag,duration_ms) %>% 
@@ -151,22 +262,22 @@ duration_played <- lfm_df %>%
 
 duration_played$artist_tag <- as.character(duration_played$artist_tag)
 
-prog_unique <- prog_unique %>% 
+genre_unique <- genre_unique %>% 
   group_by(name,artist.name,artist_tag) %>% 
   dplyr::mutate(count=n()) %>% 
   summarise_all(mean) %>% rename(duration_unique=duration_ms)
 
-prog_unique <- left_join(prog_unique,duration_played, by=c("artist_tag","name","artist.name"))
+genre_unique <- left_join(genre_unique,duration_played, by=c("artist_tag","name","artist.name"))
 
 
-prog_unique <- prog_unique %>% select(-c(acousticness,key,mode,speechiness,instrumentalness,liveness))
+genre_unique <- genre_unique %>% select(-c(acousticness,key,mode,speechiness,instrumentalness,liveness))
 
 
-total_played <- prog_unique %>% 
+total_played <- genre_unique %>% 
   select(artist_tag,duration_ms) %>% 
   group_by(artist_tag) %>% summarise_if(is.numeric,sum,na.rm=T)
 
-prog_unique <- prog_unique %>% 
+genre_unique <- genre_unique %>% 
   group_by(artist_tag) %>% 
   summarise(danceability = sum((danceability*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
             energy = sum((energy*duration_unique)/sum(duration_unique,na.rm=T),na.rm=T),
@@ -180,33 +291,33 @@ prog_unique <- prog_unique %>%
 
 
 
-prog_unique[,2:6] <- apply(prog_unique[,2:6], MARGIN = 2, scale)
+genre_unique[,2:6] <- apply(genre_unique[,2:6], MARGIN = 2, scale)
 
-prog_unique$duration_played <- prog_unique$duration_played/3600000
-prog_unique <- prog_unique %>% filter(duration_played > 0.5)
+genre_unique$duration_played <- genre_unique$duration_played/3600000
+genre_unique <- genre_unique %>% filter(duration_played > 0.5)
 
-prog.pca <- prcomp(prog_unique[,2:6])
-summary(prog.pca)
-prog.pca$rotation
+genre.pca <- prcomp(genre_unique[,2:6])
+summary(genre.pca)
+genre.pca$rotation
 
-prog_unique$PC1 <- prog.pca$x[,1]
-prog_unique$PC2 <- prog.pca$x[,2]
-prog_unique$PC3 <- prog.pca$x[,3]
-prog_unique$PC4 <- prog.pca$x[,4]
+genre_unique$PC1 <- genre.pca$x[,1]
+genre_unique$PC2 <- genre.pca$x[,2]
+genre_unique$PC3 <- genre.pca$x[,3]
+genre_unique$PC4 <- genre.pca$x[,4]
 
 
 
   
-rot <- sweep(prog.pca$rotation,2,prog.pca$sdev,FUN="*")
+rot <- sweep(genre.pca$rotation,2,genre.pca$sdev,FUN="*")
 rot <- as.data.frame(rot[,c("PC1","PC2")])
 colnames(rot) <- c("xvar","yvar")
 rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
                       hjust = (1 -1.5*sign(xvar))/2)
 
 
-prog_unique <- prog_unique %>% arrange(desc(duration_played))
+genre_unique <- genre_unique %>% arrange(desc(duration_played))
 
-ggplot(prog_unique,aes(x=PC1,y=PC2)) + 
+ggplot(genre_unique,aes(x=PC1,y=PC2)) + 
   geom_point(alpha=0.5,aes(size=duration_played)) + geom_text(aes(label=artist_tag),size=2,alpha=0.3) +
 scale_size_continuous(range = c(0,30)) + 
   theme(legend.position = "none") +
