@@ -76,7 +76,7 @@ ggplot(df_audio_sub) + geom_point(aes(x=week,y=weekday,size=log(1+duration_sum/1
 artists_unique <- lfm_df %>% select(artist.name,artist_tag,duration_ms)
 artists_unique$artist.name <- as.character(artists_unique$artist.name)
 artists_unique$artist_tag <- as.character(artists_unique$artist_tag)
-artists_unique$artist.name <- str_replace(artists_unique$artists.name,"Ghost B.C","Ghost")
+artists_unique$artist.name <- artists_unique$artist.name %>%  str_replace("Ghost B.C","Ghost")
 artists_unique <- artists_unique %>% group_by(artist_tag,artist.name) %>% summarise(duration_total = sum(duration_ms))
 artists_unique$duration_total <- artists_unique$duration_total/3600000
 artists_unique <- artists_unique %>% filter(duration_total > 4)
@@ -118,17 +118,17 @@ song_list <- lfm_df %>%
 song_count <- song_list  %>% 
   group_by(name,artist.name,artist_tag) %>% 
   summarise(count=n(),
-            time_played=sum(duration_ms)/3600000)
+            time_played=sum(duration_ms)/3600000) %>% ungroup()
 
 
-prog_count <- song_count %>% filter(str_match(artist_tag,"Progressive metal|Avant-garde Metal|Progressive rock|Power metal"))
+prog_count <- song_count %>% filter(str_detect(artist_tag,"Progressive metal|Avant-garde Metal|Progressive rock|Power metal"))
 
 prog_artists_count <- prog_count %>% group_by(artist.name) %>% summarise_if(is.numeric,sum)
 
 #### songs pca - top 25 artists ####
 
-all_artists_count <- song_count %>% group_by(artist.name) %>% summarise_if(is.numeric,sum)
-top_artists <- all_artists_count %>% arrange(desc(time_played)) %>% head(30)
+all_artists_count <- song_count %>% group_by(artist.name,artist_tag) %>% summarise_if(is.numeric,sum)
+top_artists <- all_artists_countc %>% arrange(desc(time_played)) %>% head(30)
 
 songs_unique <- lfm_df %>% select(name,artist.name,artist_tag,duration_ms,danceability:tempo)
 songs_unique$artist_tag <- as.character(songs_unique$artist_tag)
@@ -170,10 +170,11 @@ rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
 songs_unique <- songs_unique %>% arrange(desc(time_played))
 songs_unique <- songs_unique %>% mutate()
 
-ggplot(songs_unique,aes(x=PC1,y=PC2)) + 
-  geom_point(aes(size=time_played,group=name,fill=artist_tag),alpha=0.2,color="#d43a06",shape=21) + 
+p <- ggplot(songs_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(aes(size=time_played,group=name,fill=artist_tag,color=artist.name),stroke=0,alpha=0.35,shape=19) + 
   #geom_convexhull(aes(fill=artist_tag),alpha=0.1) +
   #geom_text(aes(label=artist.name),size=2,alpha=0.5,family="Noto Sans") +
+  scale_fill_uchicago() ++
   scale_size_continuous(range = c(0,6)) + 
   theme(legend.position = "none",
         panel.background = element_rect(fill="#fcede8"),
@@ -183,7 +184,7 @@ ggplot(songs_unique,aes(x=PC1,y=PC2)) +
                arrow = arrow(length = unit(1/2, 'picas'))) +
   geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="#822d11",family="Noto Sans") + labs(x=paste0("PC1: ",round(song.var.explained[1]*100,digits = 2),"% of variance"),
                                                                                                                                    y=paste0("PC2: ",round(song.var.explained[2]*100,digits = 2),"% of variance"))
-plotly::ggplotly()
+plotly::ggplotly(p)
 
 
 #### prog artists - pca
@@ -192,12 +193,12 @@ prog_unique <- lfm_df %>% select(name,artist.name,duration_ms,artist_tag,danceab
 prog_unique$artist_tag <- as.character(prog_unique$artist_tag)
 prog_unique$artist.name <- as.character(prog_unique$artist.name)
 prog_unique$name <- as.character(prog_unique$name)
-prog_unique <- prog_unique %>% filter(artist_tag == "Progressive metal")
+prog_unique <- prog_unique %>% filter(str_detect(artist_tag,"Progressive metal|Avant-garde Metal|Progressive rock|Power metal"))
 prog_unique <- prog_unique %>% distinct(name,artist.name,artist_tag,.keep_all = T)
 
 
 prog_unique <- prog_unique %>% 
-  group_by(artist.name) %>% 
+  group_by(artist.name,artist_tag) %>% 
   summarise_if(is.numeric,mean) %>% rename(duration_unique=duration_ms)
 
 
@@ -234,10 +235,11 @@ rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
 
 prog_unique <- prog_unique %>% arrange(desc(time_played))
 
-ggplot(prog_unique,aes(x=PC1,y=PC2)) + 
-  geom_point(alpha=0.5,aes(size=time_played),color="#d43a06",fill="#f0ba65",shape=21) + 
+p2 <- ggplot(prog_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(alpha=0.5,aes(size=time_played,fill=artist_tag),color="#d43a06",shape=21) + 
   geom_text(aes(label=artist.name),size=2,alpha=0.5,family="Noto Sans") +
-  scale_size_continuous(range = c(2,20)) + 
+  scale_fill_uchicago() +
+  scale_size_continuous(range = c(0,10)) + 
   theme(legend.position = "none",
         panel.background = element_rect(fill="#fcede8"),
         text=element_text(family="Noto Sans"),
@@ -246,7 +248,9 @@ ggplot(prog_unique,aes(x=PC1,y=PC2)) +
                arrow = arrow(length = unit(1/2, 'picas'))) +
   geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="#822d11",family="Noto Sans") + labs(x=paste0("PC1: ",round(prog.var.explained[1]*100,digits = 2),"% of variance"),
                                                                                                                                    y=paste0("PC2: ",round(prog.var.explained[2]*100,digits = 2),"% of variance"))
-ggsave(filename = "dnm.jpeg",width = 10,height = 10,dpi = 300)
+plotly::ggplotly(p2)
+
+#ggsave(filename = "dnm.jpeg",width = 10,height = 10,dpi = 300)
 
 ##genres - pca
 
@@ -300,6 +304,8 @@ genre.pca <- prcomp(genre_unique[,2:6])
 summary(genre.pca)
 genre.pca$rotation
 
+genre.var.explained <- genre.pca$sdev^2/sum(genre.pca$sdev %>% sapply(function(x) x*x))
+
 genre_unique$PC1 <- genre.pca$x[,1]
 genre_unique$PC2 <- genre.pca$x[,2]
 genre_unique$PC3 <- genre.pca$x[,3]
@@ -317,18 +323,22 @@ rot <- rot %>% mutate(angle = (180/pi)*atan(yvar/xvar),
 
 genre_unique <- genre_unique %>% arrange(desc(duration_played))
 
-ggplot(genre_unique,aes(x=PC1,y=PC2)) + 
-  geom_point(alpha=0.5,aes(size=duration_played)) + geom_text(aes(label=artist_tag),size=2,alpha=0.3) +
-scale_size_continuous(range = c(0,30)) + 
-  theme(legend.position = "none") +
-  geom_segment(data=rot,aes(x = 0,y=0,xend=2*xvar,yend=2*yvar),color=muted("red"),
-               arrow = arrow(length = unit(1/2, 'picas'))) +
-  geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="darkred")
-
+p3 <- ggplot(genre_unique,aes(x=PC1,y=PC2)) + 
+  geom_point(alpha=0.5,aes(size=duration_played),color="#d43a06") + 
+  geom_text(aes(label=artist_tag),size=2,alpha=0.5) +
+  scale_fill_uchicago() +
+  scale_size_continuous(range = c(2,15)) + 
+  theme(legend.position = "none",
+        panel.background = element_rect(fill="#fcede8"),
+        text=element_text(family="Noto Sans"),
+        panel.grid.minor = element_blank()) +
+  geom_segment(data=rot,aes(x = 0,y=0,xend=2*xvar,yend=2*yvar),color="#822d11",
+               arrow = arrow()) +
+  geom_text(data=rot,aes(label=rownames(rot),x=2*xvar,y=2*yvar,angle=angle,hjust=hjust),color="#822d11",family="Noto Sans") + labs(x=paste0("PC1: ",round(genre.var.explained[1]*100,digits = 2),"% of variance"),
+                                                                                                                                   y=paste0("PC2: ",round(genre.var.explained[2]*100,digits = 2),"% of variance"))
  
 
-plotly::ggplotly()
-
+plotly::ggplotly(p3) 
 
 
 
