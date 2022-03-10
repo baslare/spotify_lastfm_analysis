@@ -27,47 +27,67 @@ parse_sci <- function(x){
 lfm_df <- fromJSON("spot_lfm_final.json") 
 lfm_df <- as_tibble(lfm_df)
 
-
 lfm_df_cols <- lapply(lfm_df, function(x) x %>% str_detect("[A-z]+"))
 lfm_df_cols <- sapply(lfm_df_cols,sum)
 lfm_df_cols <- lfm_df_cols[lfm_df_cols <10000]
 lfm_df_cols <- names(lfm_df_cols)
 lfm_df_cols <- lfm_df_cols[-3]
 
-
-
-
 lfm_df <- lfm_df %>% mutate_at(lfm_df_cols,.funs = function(x) sapply(x,parse_sci))
 lfm_df$date_dmy <- lubridate::parse_date_time( lfm_df$`date.#text`,"dmy HM",select_formats = "%d %C %Y") %>% lubridate::as_date()
 
 
+#### genres over time ####
 
-#### audio characteristics over time ####
+genres_df <- lfm_df %>% group_by(artist_tag) %>% 
+  summarise(total_played = sum(duration_ms,na.rm = T)/3600000,total_count = n()) %>% 
+  arrange(desc(total_played))
 
-audio_chars <- lfm_df_cols[4:14]
+genres_to_filter <- genres_df$artist_tag[1:10] %>% as.character()
+
+lfm_df$artist_tag_other <- lfm_df$artist_tag %>% as.character()
+lfm_df$artist_tag_other[which(!lfm_df$artist_tag_other %in% genres_to_filter)] <- "Other"
+                                                           
+gt_df <- lfm_df %>% group_by(date_dmy,artist_tag_other) %>% summarise(total_played = round(sum(duration_ms)/3600000,digits = 1),
+                                                                      total_count = n()) %>% ungroup()
+gt_df <- gt_df %>% filter(date_dmy > as.Date("2000-01-01-"))
+
+gt_df$months <- gt_df$date_dmy %>% format(format="%Y - %m") %>% ym()
+gt_df <- gt_df %>% group_by(months,artist_tag_other) %>% summarise(
+                                                                   total_played = sum(total_played),
+                                                                   total_count = sum(total_count),                                                                 )
+gt_df$artist_tag_other <- gt_df$artist_tag_other %>% as.factor()
+
+gt_df <- gt_df %>% 
+  group_by(months) %>% 
+  arrange(desc(total_played)) %>% 
+  mutate(ratio_played = total_played/sum(total_played),
+         monthly_gini = ineq::ineq(ratio_played,type = "Gini")) %>% 
+  ungroup()
 
 
-df_audio <- FALSE
+set.seed(5)
+pal_cols <-sample(ggsci::pal_d3("category20")(12)) 
 
-df_audio <- lfm_df %>% group_by(date_dmy) %>% summarise_at(audio_chars,~weighted.mean(.x,duration_ms))
-df_audio_helper <- lfm_df %>% group_by(date_dmy) %>% summarise(duration_sum = sum(duration_ms))
+ggplot(gt_df) + 
+  geom_bar(aes(x=months,y=ratio_played,fill=artist_tag_other),stat = "identity",alpha=0.7) + 
+  scale_fill_manual(values = pal_cols) + 
+  theme(panel.background = element_rect(fill = "#2d3033"),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color="white",fill="transparent"),
+        text=element_text(family="Noto Sans",color="#bdc3c9"),
+        legend.position = "bottom",
+        plot.background = element_rect(fill = "#2d3033"),
+        legend.background = element_rect(fill = "#2d3033"))
 
-df_audio <- left_join(df_audio,df_audio_helper,by="date_dmy")
 
-days_master <- seq(dmy("12-02-2013"),dmy("22-02-2022"),by="days")
-days_master <- data.frame(date_dmy = days_master)
-
-df_audio <- left_join(days_master,df_audio,by="date_dmy")
-df_audio[is.na(df_audio)] <- 0
-
-df_audio$weekday <- weekdays(df_audio$date_dmy)
-df_audio$week <- ceiling(as.period(df_audio$date_dmy - min(df_audio$date_dmy))/(weeks(1)))
-
-df_audio_sub <- df_audio[df_audio$date_dmy > dmy("22-02-2021"),]
-
-ggplot(df_audio_sub) + geom_tile(aes(x=week,y=weekday,fill=instrumentalness)) + coord_equal() + scale_fill_material("pink")
-
-ggplot(df_audio_sub) + geom_point(aes(x=week,y=weekday,size=log(1+duration_sum/1000))) + coord_equal() + scale_size(range = c(0,5))
+ggplot(gt_df) + geom_bar(aes(x=months,y=total_played,fill=artist_tag_other),stat = "identity") + 
+  scale_fill_manual(values = pal_cols) +
+  theme(panel.background = element_rect(fill = "#2d3033"),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color="white",fill="transparent"),
+        text=element_text(family="Noto Sans"),
+        legend.position = "bottom")
 
 #### circle packing ####
 
